@@ -222,25 +222,27 @@ export default function DashboardPage() {
   // ── Error State ──
   if (error) {
     const isAuth = error === 'no_token' || error === 'expired';
+
+    // Redirect ke halaman login untuk error autentikasi
+    if (isAuth) {
+      router.push('/login');
+      return null;
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center p-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl max-w-md">
           <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-8 h-8 text-red-400" />
           </div>
-          <h2 className="text-lg font-bold text-red-400 mb-2">
-            {isAuth ? 'Sesi Berakhir' : 'Terjadi Kesalahan'}
-          </h2>
-          <p className="text-sm text-slate-400 mb-4">
-            {isAuth
-              ? 'Silakan minta link akses baru dari Telegram Bot.'
-              : error}
-          </p>
-          <p className="text-xs text-slate-500">
-            Ketik{' '}
-            <code className="bg-slate-800 px-2 py-0.5 rounded text-cyan-400">/web</code>{' '}
-            di bot Telegram
-          </p>
+          <h2 className="text-lg font-bold text-red-400 mb-2">Terjadi Kesalahan</h2>
+          <p className="text-sm text-slate-400 mb-4">{error}</p>
+          <button
+            onClick={() => router.push('/login')}
+            className="mt-2 px-4 py-2 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg text-sm transition-colors cursor-pointer"
+          >
+            Kembali ke Login
+          </button>
         </div>
       </div>
     );
