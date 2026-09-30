@@ -94,9 +94,31 @@ export default function LoginPage() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl">
           <h2 className="text-lg font-semibold text-slate-200 mb-2">Masuk ke Dashboard</h2>
           <p className="text-sm text-slate-400 mb-6">
-            Login dengan akun Telegram untuk mengakses dashboard keuangan.
+            Pilih cara login untuk mengakses dashboard keuangan.
           </p>
 
+          {/* Option 1: Open Bot (Primary - always works) */}
+          <a
+            href="https://t.me/ahkFlowBot?start=web"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-3 bg-[#2AABEE] hover:bg-[#229ED9] text-white font-medium rounded-xl transition-colors mb-4"
+          >
+            <MessageCircle className="w-5 h-5" />
+            Buka Bot Telegram
+          </a>
+          <p className="text-xs text-slate-500 mb-6">
+            Ketik <code className="bg-slate-800 px-1.5 py-0.5 rounded text-cyan-400">/web</code> di bot → klik link yang dikirim
+          </p>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex-1 h-px bg-slate-800" />
+            <span className="text-xs text-slate-600">atau login langsung</span>
+            <div className="flex-1 h-px bg-slate-800" />
+          </div>
+
+          {/* Option 2: Telegram Widget */}
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-3">
               <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
@@ -109,16 +131,6 @@ export default function LoginPage() {
           {error && (
             <p className="text-sm text-red-400 mt-4">{error}</p>
           )}
-        </div>
-
-        {/* Alternative: via Bot */}
-        <div className="mt-6 flex items-center gap-2 justify-center text-sm text-slate-500">
-          <MessageCircle className="w-4 h-4" />
-          <p>
-            Atau ketik{' '}
-            <code className="bg-slate-800 px-1.5 py-0.5 rounded text-cyan-400">/web</code>{' '}
-            di bot Telegram
-          </p>
         </div>
       </div>
     </div>
