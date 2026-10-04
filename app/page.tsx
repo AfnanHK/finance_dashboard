@@ -6,7 +6,7 @@ import { useSession, signOut } from 'next-auth/react';
 import {
   TrendingUp, TrendingDown, Wallet, LogOut, Download,
   ArrowUpRight, ArrowDownRight, BarChart3, Receipt, Loader2,
-  AlertCircle
+  AlertCircle, ShieldCheck
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -85,6 +85,7 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
   const [username, setUsername] = useState('User');
   const [filterMonth, setFilterMonth] = useState('all');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // ── Fetch data (Telegram token ATAU session admin) ──
   useEffect(() => {
@@ -105,10 +106,10 @@ export default function DashboardPage() {
 
     // 2. Ambil token dari storage
     const token = localStorage.getItem('finance_token');
-    const isAdmin = (session?.user as any)?.role === 'admin';
+    const isNextAuthAdmin = (session?.user as any)?.role === 'admin';
 
     // Tidak login lewat Telegram maupun admin
-    if (!token && !isAdmin) {
+    if (!token && !isNextAuthAdmin) {
       setError('no_token');
       setLoading(false);
       return;
@@ -120,12 +121,19 @@ export default function DashboardPage() {
       const payload = decodeJWT(token);
       if (payload?.username) setUsername(payload.username);
 
+      // Cek apakah Telegram ID cocok dengan ID Admin
+      const currentTgId = String(payload?.telegram_id ?? payload?.id ?? '').trim();
+      const envAdminId = String(process.env.NEXT_PUBLIC_ADMIN_TELEGRAM_ID || '').trim();
+      if (envAdminId && currentTgId && currentTgId === envAdminId) {
+        setIsAdmin(true);
+      }
+
       // Token Telegram kadaluarsa
       if (payload?.exp && payload.exp * 1000 < Date.now()) {
         localStorage.removeItem('finance_token');
         document.cookie = 'finance_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         activeToken = null;
-        if (!isAdmin) {
+        if (!isNextAuthAdmin) {
           setError('expired');
           setLoading(false);
           return;
@@ -133,7 +141,22 @@ export default function DashboardPage() {
       }
     }
 
-    if (isAdmin && !activeToken) setUsername('admin');
+    if (isNextAuthAdmin) {
+      setIsAdmin(true);
+      if (!activeToken) setUsername('admin');
+    }
+
+    // Verifikasi kepastian hak akses admin dari server (/api/admin/me)
+    fetch('/api/admin/me', {
+      headers: activeToken ? { Authorization: `Bearer ${activeToken}` } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((resData) => {
+        if (resData?.isAdmin) {
+          setIsAdmin(true);
+        }
+      })
+      .catch(() => {});
 
     fetch('/api/keuangan', {
       headers: activeToken ? { Authorization: `Bearer ${activeToken}` } : {},
@@ -142,7 +165,7 @@ export default function DashboardPage() {
         if (res.status === 401 || res.status === 403) {
           localStorage.removeItem('finance_token');
           document.cookie = 'finance_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-          throw new Error(isAdmin ? 'Admin belum punya akses ke /api/keuangan' : 'expired');
+          throw new Error(isNextAuthAdmin ? 'Admin belum punya akses ke /api/keuangan' : 'expired');
         }
         if (!res.ok) throw new Error('fetch_failed');
         return res.json();
@@ -241,6 +264,7 @@ export default function DashboardPage() {
   // ── Logout (Telegram + Admin) ──
   const handleLogout = async () => {
     localStorage.removeItem('finance_token');
+    document.cookie = 'finance_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     await signOut({ callbackUrl: '/login' });
   };
 
@@ -301,10 +325,23 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <span className="text-sm text-slate-400 hidden sm:block">
               👤 <span className="text-cyan-400 font-medium">@{username}</span>
             </span>
+
+            {/* Tombol Khusus Admin: Hanya muncul jika ID Telegram adalah Admin atau Login NextAuth Admin */}
+            {isAdmin && (
+              <button
+                onClick={() => router.push('/admin')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/50 rounded-lg transition-all cursor-pointer shadow-sm shadow-cyan-500/10"
+                title="Buka Dashboard Admin"
+              >
+                <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                <span>Admin</span>
+              </button>
+            )}
+
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"

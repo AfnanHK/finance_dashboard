@@ -55,24 +55,45 @@ export default function AdminPage() {
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // ── Guard Perbaikan: Cek NextAuth ATAU LocalStorage Telegram Token ──
+    // ── Guard: Pastikan hanya Admin (NextAuth ATAU Telegram Admin ID) yang boleh akses ──
     useEffect(() => {
         if (status === 'loading') return;
 
         const isNextAuthAdmin = (session?.user as any)?.role === 'admin';
-        const hasTelegramToken = !!localStorage.getItem('finance_token');
+        const token = localStorage.getItem('finance_token');
 
-        // Loloskan jika NextAuth Admin ATAU Punya Token Telegram
-        if (isNextAuthAdmin || hasTelegramToken) {
+        if (isNextAuthAdmin) {
             setIsAuthorized(true);
-        } else {
+            return;
+        }
+
+        if (!token) {
             setIsAuthorized(false);
             router.replace('/login');
+            return;
         }
+
+        // Cek ke server apakah token telegram ini milik admin
+        fetch('/api/admin/me', {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((json) => {
+                if (json?.isAdmin) {
+                    setIsAuthorized(true);
+                } else {
+                    setIsAuthorized(false);
+                    router.replace('/');
+                }
+            })
+            .catch(() => {
+                setIsAuthorized(false);
+                router.replace('/');
+            });
     }, [status, session, router]);
 
     // Helper header Authorization untuk fetch API
-    const getAuthHeaders = useCallback(() => {
+    const getAuthHeaders = useCallback((): Record<string, string> => {
         const token = localStorage.getItem('finance_token');
         return token ? { Authorization: `Bearer ${token}` } : {};
     }, []);
