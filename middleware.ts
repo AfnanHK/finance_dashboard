@@ -54,6 +54,7 @@ export async function middleware(req: NextRequest) {
     if (
         pathname.startsWith("/api/auth") ||
         pathname.startsWith("/login") ||
+        pathname.startsWith("/auth") ||
         pathname.startsWith("/_next") ||
         pathname === "/favicon.ico" ||
         searchParams.has("token")
