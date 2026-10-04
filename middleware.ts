@@ -1,33 +1,45 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
-import crypto from "crypto";
 
-// Helper verifikasi JWT Telegram langsung di Middleware
-function verifyTelegramJWT(token: string, secret: string) {
+// Helper verifikasi JWT Telegram menggunakan Web Crypto API (Edge Runtime Compatible)
+async function verifyTelegramJWT(token: string, secret: string) {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
     const [h, p, s] = parts;
 
     try {
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(secret);
+        const messageData = encoder.encode(`${h}.${p}`);
+
+        const key = await crypto.subtle.importKey(
+            "raw",
+            keyData,
+            { name: "HMAC", hash: "SHA-256" },
+            false,
+            ["verify"]
+        );
+
         const b64urlToBuffer = (str: string) => {
             let t = str.replace(/-/g, "+").replace(/_/g, "/");
             while (t.length % 4) t += "=";
-            return Buffer.from(t, "base64");
+            const binary = atob(t);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
         };
 
-        const expected = crypto
-            .createHmac("sha256", secret)
-            .update(`${h}.${p}`)
-            .digest();
-        const given = b64urlToBuffer(s);
-        if (
-            expected.length !== given.length ||
-            !crypto.timingSafeEqual(expected, given)
-        )
-            return null;
+        const signature = b64urlToBuffer(s);
+        const isValid = await crypto.subtle.verify("HMAC", key, signature, messageData);
 
-        const payload = JSON.parse(b64urlToBuffer(p).toString("utf8"));
+        if (!isValid) return null;
+
+        const payloadText = atob(p.replace(/-/g, "+").replace(/_/g, "/"));
+        const payload = JSON.parse(payloadText);
+
         if (payload.exp && payload.exp * 1000 < Date.now()) return null;
         return payload;
     } catch {
@@ -44,7 +56,7 @@ export async function middleware(req: NextRequest) {
         pathname.startsWith("/login") ||
         pathname.startsWith("/_next") ||
         pathname === "/favicon.ico" ||
-        searchParams.has("token") // Loloskan URL link login via bot Telegram
+        searchParams.has("token")
     ) {
         return NextResponse.next();
     }
@@ -61,7 +73,7 @@ export async function middleware(req: NextRequest) {
     let isTelegramAdmin = false;
 
     if (telegramToken && secret) {
-        const payload = verifyTelegramJWT(telegramToken, secret);
+        const payload = await verifyTelegramJWT(telegramToken, secret);
         if (payload) {
             isTelegramUser = true;
             if (String(payload.telegram_id) === String(adminId)) {
@@ -70,10 +82,9 @@ export async function middleware(req: NextRequest) {
         }
     }
 
-    // 3. Khusus Rute /admin atau /api/admin: Wajib Admin (NextAuth ATAU Telegram Admin)
+    // 3. Khusus Rute /admin atau /api/admin: Wajib Admin
     if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
         if (!isAdminNextAuth && !isTelegramAdmin) {
-            // Tolak user biasa dan kembalikan ke dashboard utama
             return NextResponse.redirect(new URL("/", req.url));
         }
         return NextResponse.next();
