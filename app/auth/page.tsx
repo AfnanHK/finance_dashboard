@@ -12,12 +12,18 @@ function AuthHandler() {
     const token = searchParams.get('token');
 
     if (token) {
+      // 1. Simpan ke LocalStorage
       localStorage.setItem('finance_token', token);
-      router.push('/');
+
+      // 2. Wajib simpan ke Cookie agar dibaca oleh middleware.ts di Server
+      document.cookie = `finance_token=${token}; path=/; max-age=86400; SameSite=Lax`;
+
+      // 3. Gunakan window.location.href agar browser memicu reload & mengirim cookie baru ke server
+      window.location.href = '/';
     } else {
       setError('Token tidak ditemukan di URL. Silakan gunakan link dari Telegram Bot.');
     }
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   if (error) {
     return (
