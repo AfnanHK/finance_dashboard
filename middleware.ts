@@ -50,7 +50,7 @@ async function verifyTelegramJWT(token: string, secret: string) {
 export async function middleware(req: NextRequest) {
     const { pathname, searchParams } = req.nextUrl;
 
-    // 1. Izinkan request Auth, Statis, Login, DAN URL yang membawa parameter ?token=
+    // 1. Loloskan request Auth NextAuth, Statis, Login, DAN path /auth dari Bot Telegram
     if (
         pathname.startsWith("/api/auth") ||
         pathname.startsWith("/login") ||
@@ -62,10 +62,11 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
-    // 2. Ambil data Session NextAuth & Cookie Telegram Token
+    // 2. Ambil Session NextAuth (Login Username/Password Admin)
     const session = await auth();
     const isAdminNextAuth = (session?.user as any)?.role === "admin";
 
+    // 3. Ambil Token Telegram dari Cookie
     const telegramToken = req.cookies.get("finance_token")?.value;
     const secret = process.env.BOT_JWT_SECRET;
     const adminId = process.env.ADMIN_TELEGRAM_ID;
@@ -74,16 +75,18 @@ export async function middleware(req: NextRequest) {
     let isTelegramAdmin = false;
 
     if (telegramToken && secret) {
+        // WAJIB pake AWAIT di sini!
         const payload = await verifyTelegramJWT(telegramToken, secret);
         if (payload) {
             isTelegramUser = true;
-            if (String(payload.telegram_id) === String(adminId)) {
+            // Konversi ke String untuk memastikan perbandingan ID presisi
+            if (String(payload.telegram_id).trim() === String(adminId).trim()) {
                 isTelegramAdmin = true;
             }
         }
     }
 
-    // 3. Khusus Rute /admin atau /api/admin: Wajib Admin
+    // 4. Khusus Rute /admin atau /api/admin: Wajib Admin (NextAuth ATAU Telegram Admin)
     if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
         if (!isAdminNextAuth && !isTelegramAdmin) {
             return NextResponse.redirect(new URL("/", req.url));
@@ -91,12 +94,12 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
-    // 4. Khusus Rute Dashboard Utama (/): Boleh diakses jika Login NextAuth ATAU User Telegram Valid
+    // 5. Khusus Rute Dashboard Utama (/): Boleh diakses jika Login NextAuth ATAU User Telegram Valid
     if (session || isTelegramUser) {
         return NextResponse.next();
     }
 
-    // 5. Jika tidak punya akses sama sekali, alihkan ke /login
+    // 6. Jika tidak punya token/session sama sekali, alihkan ke /login
     return NextResponse.redirect(new URL("/login", req.url));
 }
 
