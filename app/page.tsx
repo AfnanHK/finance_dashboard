@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
 import {
   TrendingUp, TrendingDown, Wallet, LogOut, Download,
   ArrowUpRight, ArrowDownRight, BarChart3, Receipt, Loader2,
@@ -77,42 +78,55 @@ function ChartTooltip({ active, payload, label }: any) {
 // ─── Main Dashboard ──────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
+
   const [data, setData] = useState<ApiData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [username, setUsername] = useState('User');
   const [filterMonth, setFilterMonth] = useState('all');
 
-  // ── Fetch data on mount ──
+  // ── Fetch data (Telegram token ATAU session admin) ──
   useEffect(() => {
-    const token = localStorage.getItem('finance_token');
+    if (status === 'loading') return;
 
-    if (!token) {
+    const token = localStorage.getItem('finance_token');
+    const isAdmin = (session?.user as any)?.role === 'admin';
+
+    // Tidak login lewat Telegram maupun admin
+    if (!token && !isAdmin) {
       setError('no_token');
       setLoading(false);
       return;
     }
 
-    // Decode JWT for username display
-    const payload = decodeJWT(token);
-    if (payload?.username) setUsername(payload.username);
+    let activeToken: string | null = token;
 
-    // Check expiry
-    if (payload?.exp && payload.exp * 1000 < Date.now()) {
-      localStorage.removeItem('finance_token');
-      setError('expired');
-      setLoading(false);
-      return;
+    if (token) {
+      const payload = decodeJWT(token);
+      if (payload?.username) setUsername(payload.username);
+
+      // Token Telegram kadaluarsa
+      if (payload?.exp && payload.exp * 1000 < Date.now()) {
+        localStorage.removeItem('finance_token');
+        activeToken = null;
+        if (!isAdmin) {
+          setError('expired');
+          setLoading(false);
+          return;
+        }
+      }
     }
 
-    // Fetch from proxy API (avoids CORS)
+    if (isAdmin && !activeToken) setUsername('admin');
+
     fetch('/api/keuangan', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: activeToken ? { Authorization: `Bearer ${activeToken}` } : {},
     })
       .then((res) => {
         if (res.status === 401 || res.status === 403) {
           localStorage.removeItem('finance_token');
-          throw new Error('expired');
+          throw new Error(isAdmin ? 'Admin belum punya akses ke /api/keuangan' : 'expired');
         }
         if (!res.ok) throw new Error('fetch_failed');
         return res.json();
@@ -126,7 +140,14 @@ export default function DashboardPage() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [status, session]);
+
+  // ── Redirect ke login (di useEffect, bukan saat render) ──
+  useEffect(() => {
+    if (error === 'no_token' || error === 'expired') {
+      router.replace('/login');
+    }
+  }, [error, router]);
 
   // ── Compute monthly chart data ──
   const chartData = useMemo(() => {
@@ -201,14 +222,14 @@ export default function DashboardPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ── Logout ──
-  const handleLogout = () => {
+  // ── Logout (Telegram + Admin) ──
+  const handleLogout = async () => {
     localStorage.removeItem('finance_token');
-    router.push('/auth');
+    await signOut({ callbackUrl: '/login' });
   };
 
   // ── Loading State ──
-  if (loading) {
+  if (loading || status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -223,11 +244,8 @@ export default function DashboardPage() {
   if (error) {
     const isAuth = error === 'no_token' || error === 'expired';
 
-    // Redirect ke halaman login untuk error autentikasi
-    if (isAuth) {
-      router.push('/login');
-      return null;
-    }
+    // Redirect sudah ditangani useEffect di atas
+    if (isAuth) return null;
 
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -238,7 +256,7 @@ export default function DashboardPage() {
           <h2 className="text-lg font-bold text-red-400 mb-2">Terjadi Kesalahan</h2>
           <p className="text-sm text-slate-400 mb-4">{error}</p>
           <button
-            onClick={() => router.push('/login')}
+            onClick={handleLogout}
             className="mt-2 px-4 py-2 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg text-sm transition-colors cursor-pointer"
           >
             Kembali ke Login
@@ -249,7 +267,8 @@ export default function DashboardPage() {
   }
 
   // ── Dashboard ──
-  const { summary } = data!;
+  if (!data) return null;
+  const { summary } = data;
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -447,9 +466,8 @@ export default function DashboardPage() {
                       <td className="py-3 text-slate-500 hidden sm:table-cell">
                         {tx.category || '-'}
                       </td>
-                      <td className={`py-3 text-right font-semibold whitespace-nowrap ${
-                        tx.type === 'income' ? 'text-emerald-400' : 'text-red-400'
-                      }`}>
+                      <td className={`py-3 text-right font-semibold whitespace-nowrap ${tx.type === 'income' ? 'text-emerald-400' : 'text-red-400'
+                        }`}>
                         {tx.type === 'income' ? '+' : '-'}{' '}
                         {formatRupiah(parseFloat(tx.amount))}
                       </td>
