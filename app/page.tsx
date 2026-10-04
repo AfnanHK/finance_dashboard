@@ -90,6 +90,20 @@ export default function DashboardPage() {
   useEffect(() => {
     if (status === 'loading') return;
 
+    // 1. Tangkap token dari URL parameter (?token=...) jika datang dari link bot
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+
+    if (tokenFromUrl) {
+      // Simpan ke LocalStorage & Cookie agar Middleware Next.js ikut mengenali
+      localStorage.setItem('finance_token', tokenFromUrl);
+      document.cookie = `finance_token=${tokenFromUrl}; path=/; max-age=86400; SameSite=Lax`;
+
+      // Bersihkan query string dari URL agar bersih
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // 2. Ambil token dari storage
     const token = localStorage.getItem('finance_token');
     const isAdmin = (session?.user as any)?.role === 'admin';
 
@@ -109,6 +123,7 @@ export default function DashboardPage() {
       // Token Telegram kadaluarsa
       if (payload?.exp && payload.exp * 1000 < Date.now()) {
         localStorage.removeItem('finance_token');
+        document.cookie = 'finance_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         activeToken = null;
         if (!isAdmin) {
           setError('expired');
@@ -126,6 +141,7 @@ export default function DashboardPage() {
       .then((res) => {
         if (res.status === 401 || res.status === 403) {
           localStorage.removeItem('finance_token');
+          document.cookie = 'finance_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
           throw new Error(isAdmin ? 'Admin belum punya akses ke /api/keuangan' : 'expired');
         }
         if (!res.ok) throw new Error('fetch_failed');

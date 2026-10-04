@@ -59,6 +59,7 @@ export default function LoginPage() {
 
         if (data.success && data.token) {
           localStorage.setItem('finance_token', data.token);
+          document.cookie = `finance_token=${data.token}; path=/; max-age=86400; SameSite=Lax`;
           router.push('/');
         } else {
           setError(data.message || 'Login gagal');

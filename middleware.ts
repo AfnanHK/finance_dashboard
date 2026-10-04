@@ -16,9 +16,16 @@ function verifyTelegramJWT(token: string, secret: string) {
             return Buffer.from(t, "base64");
         };
 
-        const expected = crypto.createHmac("sha256", secret).update(`${h}.${p}`).digest();
+        const expected = crypto
+            .createHmac("sha256", secret)
+            .update(`${h}.${p}`)
+            .digest();
         const given = b64urlToBuffer(s);
-        if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null;
+        if (
+            expected.length !== given.length ||
+            !crypto.timingSafeEqual(expected, given)
+        )
+            return null;
 
         const payload = JSON.parse(b64urlToBuffer(p).toString("utf8"));
         if (payload.exp && payload.exp * 1000 < Date.now()) return null;
@@ -29,23 +36,23 @@ function verifyTelegramJWT(token: string, secret: string) {
 }
 
 export async function middleware(req: NextRequest) {
-    const { pathname } = req.nextUrl;
+    const { pathname, searchParams } = req.nextUrl;
 
-    // 1. Izinkan request API Auth, Login, & Statis
+    // 1. Izinkan request Auth, Statis, Login, DAN URL yang membawa parameter ?token=
     if (
         pathname.startsWith("/api/auth") ||
         pathname.startsWith("/login") ||
         pathname.startsWith("/_next") ||
-        pathname === "/favicon.ico"
+        pathname === "/favicon.ico" ||
+        searchParams.has("token") // Loloskan URL link login via bot Telegram
     ) {
         return NextResponse.next();
     }
 
-    // 2. Cek Session NextAuth (Login Username/Password Admin)
+    // 2. Ambil data Session NextAuth & Cookie Telegram Token
     const session = await auth();
     const isAdminNextAuth = (session?.user as any)?.role === "admin";
 
-    // 3. Cek Token Telegram dari Cookie (Login via Bot/Widget)
     const telegramToken = req.cookies.get("finance_token")?.value;
     const secret = process.env.BOT_JWT_SECRET;
     const adminId = process.env.ADMIN_TELEGRAM_ID;
@@ -63,20 +70,22 @@ export async function middleware(req: NextRequest) {
         }
     }
 
-    // 4. Khusus Route /admin / /api/admin: Harus Admin (NextAuth ATAU Telegram ID Admin)
+    // 3. Khusus Rute /admin atau /api/admin: Wajib Admin (NextAuth ATAU Telegram Admin)
     if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
         if (!isAdminNextAuth && !isTelegramAdmin) {
-            return NextResponse.redirect(new URL("/", req.url)); // Lempar ke dashboard biasa jika bukan admin
+            // Tolak user biasa dan kembalikan ke dashboard utama
+            return NextResponse.redirect(new URL("/", req.url));
         }
         return NextResponse.next();
     }
 
-    // 5. Proteksi Dashboard Utama (/): Boleh diakses jika Login NextAuth ATAU Telegram User
-    if (!session && !isTelegramUser) {
-        return NextResponse.redirect(new URL("/login", req.url));
+    // 4. Khusus Rute Dashboard Utama (/): Boleh diakses jika Login NextAuth ATAU User Telegram Valid
+    if (session || isTelegramUser) {
+        return NextResponse.next();
     }
 
-    return NextResponse.next();
+    // 5. Jika tidak punya akses sama sekali, alihkan ke /login
+    return NextResponse.redirect(new URL("/login", req.url));
 }
 
 export const config = {
