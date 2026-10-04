@@ -50,7 +50,7 @@ async function verifyTelegramJWT(token: string, secret: string) {
 export async function middleware(req: NextRequest) {
     const { pathname, searchParams } = req.nextUrl;
 
-    // 1. Loloskan request Auth NextAuth, Statis, Login, DAN path /auth dari Bot Telegram
+    // 1. Izinkan request Auth, Statis, Login, DAN path /auth dari Bot Telegram
     if (
         pathname.startsWith("/api/auth") ||
         pathname.startsWith("/login") ||
@@ -62,11 +62,11 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
-    // 2. Ambil Session NextAuth (Login Username/Password Admin)
+    // 2. Cek Session NextAuth Admin (Form Login)
     const session = await auth();
     const isAdminNextAuth = (session?.user as any)?.role === "admin";
 
-    // 3. Ambil Token Telegram dari Cookie
+    // 3. Cek Cookie Token Telegram
     const telegramToken = req.cookies.get("finance_token")?.value;
     const secret = process.env.BOT_JWT_SECRET;
     const adminId = process.env.ADMIN_TELEGRAM_ID;
@@ -75,12 +75,19 @@ export async function middleware(req: NextRequest) {
     let isTelegramAdmin = false;
 
     if (telegramToken && secret) {
-        // WAJIB pake AWAIT di sini!
         const payload = await verifyTelegramJWT(telegramToken, secret);
+
         if (payload) {
             isTelegramUser = true;
-            // Konversi ke String untuk memastikan perbandingan ID presisi
-            if (String(payload.telegram_id).trim() === String(adminId).trim()) {
+
+            // Ambil ID dari telegram_id ATAU id (jika bot ngirim nama key beda)
+            const userTelegramId = String(payload.telegram_id || payload.id || "").trim();
+            const targetAdminId = String(adminId || "").trim();
+
+            // Console log untuk memantau di Vercel Logs
+            console.log("[MIDDLEWARE DEBUG] User ID:", userTelegramId, "| Target Admin ID:", targetAdminId);
+
+            if (userTelegramId && targetAdminId && userTelegramId === targetAdminId) {
                 isTelegramAdmin = true;
             }
         }
@@ -89,6 +96,7 @@ export async function middleware(req: NextRequest) {
     // 4. Khusus Rute /admin atau /api/admin: Wajib Admin (NextAuth ATAU Telegram Admin)
     if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
         if (!isAdminNextAuth && !isTelegramAdmin) {
+            console.log("[MIDDLEWARE DEBUG] Akses /admin Ditolak. Mengalihkan ke /");
             return NextResponse.redirect(new URL("/", req.url));
         }
         return NextResponse.next();
