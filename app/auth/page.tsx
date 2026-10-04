@@ -16,7 +16,7 @@ function AuthHandler() {
       localStorage.setItem('finance_token', token);
 
       // 2. Wajib simpan ke Cookie agar dibaca oleh middleware.ts di Server
-      document.cookie = `finance_token=${token}; path=/; max-age=86400; SameSite=Lax`;
+      document.cookie = `finance_token=${encodeURIComponent(token)}; path=/; max-age=86400; SameSite=Lax`;
 
       // 3. Gunakan window.location.href agar browser memicu reload & mengirim cookie baru ke server
       window.location.href = '/';
