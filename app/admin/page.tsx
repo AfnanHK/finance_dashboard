@@ -1,5 +1,4 @@
 'use client';
-// Simpan sebagai: app/admin/page.tsx (ganti total isinya)
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -34,7 +33,9 @@ function formatCell(v: any): string {
 export default function AdminPage() {
     const router = useRouter();
     const { data: session, status } = useSession();
-    const isAdmin = (session?.user as any)?.role === 'admin';
+
+    // Status otorisasi gabungan (NextAuth Admin ATAU Token Telegram)
+    const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
 
     const [table, setTable] = useState('users');
     const [page, setPage] = useState(1);
@@ -54,12 +55,27 @@ export default function AdminPage() {
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // ── Guard: hanya admin ──
+    // ── Guard Perbaikan: Cek NextAuth ATAU LocalStorage Telegram Token ──
     useEffect(() => {
-        if (status === 'unauthenticated' || (status === 'authenticated' && !isAdmin)) {
+        if (status === 'loading') return;
+
+        const isNextAuthAdmin = (session?.user as any)?.role === 'admin';
+        const hasTelegramToken = !!localStorage.getItem('finance_token');
+
+        // Loloskan jika NextAuth Admin ATAU Punya Token Telegram
+        if (isNextAuthAdmin || hasTelegramToken) {
+            setIsAuthorized(true);
+        } else {
+            setIsAuthorized(false);
             router.replace('/login');
         }
-    }, [status, isAdmin, router]);
+    }, [status, session, router]);
+
+    // Helper header Authorization untuk fetch API
+    const getAuthHeaders = useCallback(() => {
+        const token = localStorage.getItem('finance_token');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    }, []);
 
     // ── Load data ──
     const load = useCallback(async () => {
@@ -67,7 +83,8 @@ export default function AdminPage() {
         setError('');
         try {
             const res = await fetch(
-                `/api/admin/${table}?page=${page}&q=${encodeURIComponent(search)}`
+                `/api/admin/${table}?page=${page}&q=${encodeURIComponent(search)}`,
+                { headers: getAuthHeaders() }
             );
             const json = await res.json();
             if (!json.success) throw new Error(json.message || 'Gagal memuat data');
@@ -78,11 +95,11 @@ export default function AdminPage() {
         } finally {
             setLoading(false);
         }
-    }, [table, page, search]);
+    }, [table, page, search, getAuthHeaders]);
 
     useEffect(() => {
-        if (status === 'authenticated' && isAdmin) load();
-    }, [status, isAdmin, load]);
+        if (isAuthorized) load();
+    }, [isAuthorized, load]);
 
     const changeTable = (key: string) => {
         setTable(key);
@@ -114,7 +131,10 @@ export default function AdminPage() {
         try {
             const res = await fetch(`/api/admin/${table}/${editing[data.pk]}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders()
+                },
                 body: JSON.stringify(form),
             });
             const json = await res.json();
@@ -144,11 +164,12 @@ export default function AdminPage() {
         try {
             const res = await fetch(`/api/admin/${table}/${deleting[data.pk]}`, {
                 method: 'DELETE',
+                headers: getAuthHeaders(),
             });
             const json = await res.json();
             if (!json.success) throw new Error(json.message || 'Gagal menghapus');
             setDeleting(null);
-            // Kalau baris terakhir di halaman ini terhapus, mundur satu halaman
+
             if (data.rows.length === 1 && page > 1) setPage(page - 1);
             else await load();
         } catch (e: any) {
@@ -158,13 +179,15 @@ export default function AdminPage() {
         }
     };
 
-    if (status === 'loading' || !isAdmin) {
+    if (status === 'loading' || isAuthorized === null) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-950">
                 <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
             </div>
         );
     }
+
+    if (!isAuthorized) return null;
 
     const columns = data?.rows?.length ? Object.keys(data.rows[0]) : [];
     const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
@@ -203,8 +226,8 @@ export default function AdminPage() {
                                 key={t.key}
                                 onClick={() => changeTable(t.key)}
                                 className={`px-3 py-1.5 text-sm rounded-lg border transition-colors cursor-pointer ${table === t.key
-                                        ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/40'
-                                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                                    ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/40'
+                                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
                                     }`}
                             >
                                 {t.label}
@@ -290,7 +313,7 @@ export default function AdminPage() {
                             <div className="flex items-center gap-2">
                                 <button
                                     disabled={page <= 1}
-                                    onClick={() => setPage((p) => p - 1)}
+                                    onClick={() => setPage((p) => Math.max(1, p - 1))}
                                     className="p-1.5 rounded-lg bg-slate-800 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
